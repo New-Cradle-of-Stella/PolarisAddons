@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PolarisCore\PolarisCore.csproj" />
+    <ProjectReference Include="..\PolarisSave\PolarisSave.csproj" />
   </ItemGroup>
+  <Import Project="..\build\Polaris.Runtime.props" />
 </Project>
