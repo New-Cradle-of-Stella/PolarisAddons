@@ -92,7 +92,10 @@ namespace Polaris.Addons.Runtime
             catch (Exception ex)
             {
                 result = ItemUseResult.Failed;
-                Report(ex, "executing Addons item " + itemId, registration.Item.ProviderAssembly);
+                AddonDiagnostics.Report(
+                    ex,
+                    "executing Addons item " + itemId,
+                    registration.Item.ProviderAssembly);
             }
 
             InvokeAfter(sessions, itemId, grade, ContentOrigin.Addon, result, 0);
@@ -169,7 +172,7 @@ namespace Polaris.Addons.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Report(ex, "creating Addons Overlay " + overlay.Id, overlay.ProviderAssembly);
+                    AddonDiagnostics.Report(ex, "creating Addons Overlay " + overlay.Id, overlay.ProviderAssembly);
                 }
             }
 
@@ -199,7 +202,7 @@ namespace Polaris.Addons.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Report(ex, "running BeforeUse for Overlay " + session.Definition.Id,
+                    AddonDiagnostics.Report(ex, "running BeforeUse for Overlay " + session.Definition.Id,
                         session.Definition.ProviderAssembly);
                 }
             }
@@ -222,7 +225,7 @@ namespace Polaris.Addons.Runtime
                 }
                 catch (Exception ex)
                 {
-                    Report(ex, "running AfterUse for Overlay " + session.Definition.Id,
+                    AddonDiagnostics.Report(ex, "running AfterUse for Overlay " + session.Definition.Id,
                         session.Definition.ProviderAssembly);
                 }
             }
@@ -233,18 +236,6 @@ namespace Polaris.Addons.Runtime
             if (disposed)
             {
                 throw new ObjectDisposedException(nameof(ItemExecutionPipeline));
-            }
-        }
-
-        private static void Report(Exception exception, string operation, System.Reflection.Assembly owner)
-        {
-            try
-            {
-                PolarisAPI.Errors.Report(exception, operation, owner);
-            }
-            catch
-            {
-                // Core 诊断未启动时也保持单项隔离。
             }
         }
 

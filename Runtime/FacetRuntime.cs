@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Polaris.Addons.Authoring;
 using Polaris.Addons.Catalog;
 using Polaris.Addons.Definitions;
 
@@ -26,14 +27,20 @@ namespace Polaris.Addons.Runtime
             this.state = state ?? throw new ArgumentNullException(nameof(state));
         }
 
-        internal bool IsPluginObtained(string id) => state.IsObtained(id);
-        internal bool IsPluginEnabled(string id) => state.IsEnabled(id);
-        internal bool IsSkillObtained(string id) => state.IsObtained(id);
-        internal bool IsSkillEnabled(string id) => state.IsEnabled(id);
+        /// <summary>获得与启用状态按 Facet id 存放，插件与技能共用同一份状态表。</summary>
+        internal bool IsObtained(string id) => state.IsObtained(id);
+
+        internal bool IsEnabled(string id) => state.IsEnabled(id);
 
         internal void SyncPlugin(string id, bool obtained, bool enabled, bool persist)
         {
-            if (disposed || catalog.GetPlugin(id) == null)
+            if (disposed)
+            {
+                return;
+            }
+
+            PluginDefinition definition = catalog.GetPlugin(id);
+            if (definition == null)
             {
                 return;
             }
@@ -47,7 +54,7 @@ namespace Polaris.Addons.Runtime
 
             if (enabled && !plugins.ContainsKey(id))
             {
-                ActivatePlugin(catalog.GetPlugin(id));
+                ActivatePlugin(definition);
             }
             else if (!enabled && plugins.TryGetValue(id, out PluginSession session))
             {
@@ -58,7 +65,13 @@ namespace Polaris.Addons.Runtime
 
         internal void SyncSkill(string id, bool obtained, bool enabled, bool persist)
         {
-            if (disposed || catalog.GetSkill(id) == null)
+            if (disposed)
+            {
+                return;
+            }
+
+            SkillDefinition definition = catalog.GetSkill(id);
+            if (definition == null)
             {
                 return;
             }
@@ -72,7 +85,7 @@ namespace Polaris.Addons.Runtime
 
             if (enabled && !skills.ContainsKey(id))
             {
-                EnableSkill(catalog.GetSkill(id));
+                EnableSkill(definition);
             }
             else if (!enabled && skills.TryGetValue(id, out SkillSession session))
             {
@@ -94,9 +107,7 @@ namespace Polaris.Addons.Runtime
             }
 
             CancellationTokenSource execution;
-            string group = string.IsNullOrEmpty(session.Definition.ConcurrencyGroup)
-                ? id
-                : session.Definition.ConcurrencyGroup;
+            string group = ExecutionGroupOf(session.Definition);
             lock (executions)
             {
                 if (executions.ContainsKey(group) ||
@@ -123,7 +134,7 @@ namespace Polaris.Addons.Runtime
             }
             catch (Exception ex)
             {
-                Report(ex, "executing Addons skill " + id, session.Definition.ProviderAssembly);
+                AddonDiagnostics.Report(ex, "executing Addons skill " + id, session.Definition.ProviderAssembly);
                 return SkillExecutionResult.Failed;
             }
             finally
@@ -145,8 +156,8 @@ namespace Polaris.Addons.Runtime
             }
             foreach (SkillDefinition skill in catalog.Skills.Where(x =>
                 string.Equals(x.ItemId, itemId, StringComparison.Ordinal) &&
-                (x.Unlock == Authoring.AddonSkillUnlockPolicy.OwnItem ||
-                 (consumed && x.Unlock == Authoring.AddonSkillUnlockPolicy.ConsumeOwnerItem))))
+                (x.Unlock == AddonSkillUnlockPolicy.OwnItem ||
+                 (consumed && x.Unlock == AddonSkillUnlockPolicy.ConsumeOwnerItem))))
             {
                 state.SetObtained(skill.Id, true);
                 state.SetEnabled(skill.Id, true);
@@ -174,8 +185,16 @@ namespace Polaris.Addons.Runtime
             }
             disposed = true;
             CancelExecutions();
-            foreach (PluginSession session in plugins.Values.Reverse()) session.Dispose();
-            foreach (SkillSession session in skills.Values.Reverse()) session.Dispose();
+            foreach (PluginSession session in plugins.Values.Reverse())
+            {
+                session.Dispose();
+            }
+
+            foreach (SkillSession session in skills.Values.Reverse())
+            {
+                session.Dispose();
+            }
+
             plugins.Clear();
             skills.Clear();
         }
@@ -197,7 +216,10 @@ namespace Polaris.Addons.Runtime
             }
             catch (Exception ex)
             {
-                Report(ex, "activating Addons plugin " + definition.Id, definition.ProviderAssembly);
+                AddonDiagnostics.Report(
+                    ex,
+                    "activating Addons plugin " + definition.Id,
+                    definition.ProviderAssembly);
             }
             finally
             {
@@ -222,7 +244,10 @@ namespace Polaris.Addons.Runtime
             }
             catch (Exception ex)
             {
-                Report(ex, "enabling Addons skill " + definition.Id, definition.ProviderAssembly);
+                AddonDiagnostics.Report(
+                    ex,
+                    "enabling Addons skill " + definition.Id,
+                    definition.ProviderAssembly);
             }
             finally
             {
@@ -232,22 +257,18 @@ namespace Polaris.Addons.Runtime
 
         private void CancelExecution(SkillDefinition definition)
         {
-            string group = string.IsNullOrEmpty(definition.ConcurrencyGroup)
-                ? definition.Id
-                : definition.ConcurrencyGroup;
             CancellationTokenSource execution;
             lock (executions)
             {
-                executions.TryGetValue(group, out execution);
+                executions.TryGetValue(ExecutionGroupOf(definition), out execution);
             }
+
             execution?.Cancel();
         }
 
-        private static void Report(Exception exception, string operation, System.Reflection.Assembly owner)
-        {
-            try { PolarisAPI.Errors.Report(exception, operation, owner); }
-            catch { }
-        }
+        /// <summary>没有声明互斥组的技能以自身 id 独占一组。</summary>
+        private static string ExecutionGroupOf(SkillDefinition definition) =>
+            string.IsNullOrEmpty(definition.ConcurrencyGroup) ? definition.Id : definition.ConcurrencyGroup;
 
         private sealed class PluginSession : IDisposable
         {

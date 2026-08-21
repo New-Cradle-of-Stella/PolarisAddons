@@ -36,8 +36,8 @@ namespace Polaris.Addons.Definitions
     {
         public NativePluginDescriptor(string id, string itemId, string nativeKey, string title, string description, string icon, int cost)
         {
-            Id = RequireId(id);
-            ItemId = RequireId(itemId);
+            Id = NativeFacetId.Require(id, nameof(id));
+            ItemId = NativeFacetId.Require(itemId, nameof(itemId));
             NativeKey = nativeKey ?? throw new ArgumentNullException(nameof(nativeKey));
             TitleKey = title ?? string.Empty;
             DescriptionKey = description ?? string.Empty;
@@ -53,18 +53,14 @@ namespace Polaris.Addons.Definitions
         public int Cost { get; }
         public string NativeKey { get; }
         public bool IsReadOnly => true;
-
-        private static string RequireId(string id) => AddonIdentifier.IsValidId(id)
-            ? id
-            : throw new ArgumentException("Invalid Addons id '" + id + "'.");
     }
 
     public sealed class NativeSkillDescriptor : ISkillDescriptor
     {
         public NativeSkillDescriptor(string id, string itemId, string nativeKey, string title, string description, string icon)
         {
-            Id = AddonIdentifier.IsValidId(id) ? id : throw new ArgumentException("Invalid Addons id '" + id + "'.");
-            ItemId = AddonIdentifier.IsValidId(itemId) ? itemId : throw new ArgumentException("Invalid Addons id '" + itemId + "'.");
+            Id = NativeFacetId.Require(id, nameof(id));
+            ItemId = NativeFacetId.Require(itemId, nameof(itemId));
             NativeKey = nativeKey ?? throw new ArgumentNullException(nameof(nativeKey));
             TitleKey = title ?? string.Empty;
             DescriptionKey = description ?? string.Empty;
@@ -84,16 +80,25 @@ namespace Polaris.Addons.Definitions
         public bool IsReadOnly => true;
     }
 
+    /// <summary>把原版 key 映射为 Facet 的 Addons id：沿用物品 id 的命名空间，只替换中间的类别段。</summary>
     public static class NativeFacetId
     {
+        private const string ItemSegment = "/item/";
+
         public static string Plugin(string nativeKey) => FromKey("plugin", nativeKey);
+
         public static string Skill(string nativeKey) => FromKey("skill", nativeKey);
+
+        internal static string Require(string id, string parameter) => AddonIdentifier.IsValidId(id)
+            ? id
+            : throw new ArgumentException("Invalid Addons id '" + id + "'.", parameter);
 
         private static string FromKey(string kind, string nativeKey)
         {
             string itemId = NativeItemId.FromKey(nativeKey);
-            int marker = itemId.IndexOf("/item/", StringComparison.Ordinal);
-            return itemId.Substring(0, marker) + "/" + kind + "/" + itemId.Substring(marker + 6);
+            int marker = itemId.IndexOf(ItemSegment, StringComparison.Ordinal);
+            return itemId.Substring(0, marker) + "/" + kind + "/" +
+                itemId.Substring(marker + ItemSegment.Length);
         }
     }
 }

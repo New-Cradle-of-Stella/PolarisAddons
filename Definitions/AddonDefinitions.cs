@@ -190,7 +190,7 @@ namespace Polaris.Addons.Definitions
 
         public ItemDefinition Build()
         {
-            ValidateCommon(id, providerAssembly, behaviorType, typeof(IItemBehavior));
+            AddonDefinitionGuard.Validate(id, providerAssembly, behaviorType, typeof(IItemBehavior));
             if (price < 0 || stackLimit < 1)
             {
                 throw new AddonDefinitionException("Item '" + id + "' has invalid inventory values.");
@@ -199,8 +199,12 @@ namespace Polaris.Addons.Definitions
             return new ItemDefinition(
                 id, nameKey, descriptionKey, icon, price, stackLimit, category, behaviorType, providerAssembly);
         }
+    }
 
-        internal static void ValidateCommon(
+    /// <summary>三种定义 Builder 共用的校验：id、来源程序集，以及 Behavior 是否实现了对应契约。</summary>
+    internal static class AddonDefinitionGuard
+    {
+        internal static void Validate(
             string id,
             Assembly providerAssembly,
             Type behaviorType,
@@ -272,7 +276,7 @@ namespace Polaris.Addons.Definitions
 
         public PluginDefinition Build()
         {
-            ItemDefinitionBuilder.ValidateCommon(id, providerAssembly, behaviorType, typeof(IPluginBehavior));
+            AddonDefinitionGuard.Validate(id, providerAssembly, behaviorType, typeof(IPluginBehavior));
             if (!AddonIdentifier.IsValidId(itemId))
             {
                 throw new AddonDefinitionException("Plugin '" + id + "' has an invalid owner item id.");
@@ -347,7 +351,7 @@ namespace Polaris.Addons.Definitions
         public SkillDefinition Build()
         {
             Type contract = mode == AddonSkillMode.Active ? typeof(IActiveSkillBehavior) : typeof(ISkillBehavior);
-            ItemDefinitionBuilder.ValidateCommon(id, providerAssembly, behaviorType, contract);
+            AddonDefinitionGuard.Validate(id, providerAssembly, behaviorType, contract);
             if (!AddonIdentifier.IsValidId(itemId))
             {
                 throw new AddonDefinitionException("Skill '" + id + "' has an invalid owner item id.");

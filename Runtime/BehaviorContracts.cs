@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -75,8 +76,7 @@ namespace Polaris.Addons.Runtime
     public sealed class BehaviorLifetime : IBehaviorLifetime
     {
         private readonly object gate = new object();
-        private readonly System.Collections.Generic.List<IDisposable> resources =
-            new System.Collections.Generic.List<IDisposable>();
+        private readonly List<IDisposable> resources = new List<IDisposable>();
 
         public bool IsDisposed { get; private set; }
 

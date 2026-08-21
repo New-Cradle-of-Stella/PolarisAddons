@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Polaris.Addons.Authoring;
 
 namespace Polaris.Addons.Runtime
@@ -77,6 +78,10 @@ namespace Polaris.Addons.Runtime
             return new Removal(this, id);
         }
 
+        /// <summary>
+        /// 求值顺序固定为 Add → Multiply → Override，与贡献的注册顺序无关；同一档内按
+        /// <see cref="Snapshot"/> 的确定性排序依次应用，因此结果可复现。
+        /// </summary>
         public double Evaluate(string statId, double baseValue)
         {
             ModifierContribution[] snapshot = Snapshot(statId);
@@ -160,7 +165,7 @@ namespace Polaris.Addons.Runtime
 
             public void Dispose()
             {
-                ModifierEngine current = System.Threading.Interlocked.Exchange(ref owner, null);
+                ModifierEngine current = Interlocked.Exchange(ref owner, null);
                 current?.Remove(id);
             }
         }

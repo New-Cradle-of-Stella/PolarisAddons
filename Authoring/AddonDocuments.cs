@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -80,12 +80,17 @@ namespace Polaris.Addons.Authoring
         protected static double DoubleAttribute(XElement element, string name, double fallback)
         {
             string text = Attribute(element, name, string.Empty);
-            if (string.IsNullOrEmpty(text)) return fallback;
+            if (string.IsNullOrEmpty(text))
+            {
+                return fallback;
+            }
+
             if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
             {
                 throw new AddonFormatException(
                     "Attribute '" + name + "' on <" + element.Name.LocalName + "> must be a number.");
             }
+
             return value;
         }
 
@@ -136,6 +141,27 @@ namespace Polaris.Addons.Authoring
         protected static string Int(int value) => value.ToString(CultureInfo.InvariantCulture);
 
         protected static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// 单元素文档：按给定顺序写出属性。三种定义文档的差别只有根元素名和属性表，
+        /// 所以拼接规则只在这里实现一次。
+        /// </summary>
+        protected static string SingleElementDocument(
+            string rootElementName,
+            IEnumerable<KeyValuePair<string, string>> attributes)
+        {
+            var text = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<");
+            text.Append(rootElementName);
+            foreach (KeyValuePair<string, string> attribute in attributes)
+            {
+                text.Append(' ').Append(attribute.Key).Append("=\"").Append(Escape(attribute.Value)).Append('"');
+            }
+
+            return text.Append(" />\r\n").ToString();
+        }
+
+        protected static KeyValuePair<string, string> Attr(string name, string value) =>
+            new KeyValuePair<string, string>(name, value);
     }
 
     public sealed class ItemDefinitionDocument : AddonDefinitionDocument
@@ -180,17 +206,18 @@ namespace Polaris.Addons.Authoring
             };
         }
 
-        public string ToXml() =>
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n" +
-            "<PItem Version=\"" + Int(Version) + "\"" +
-            " Id=\"" + Escape(Id) + "\"" +
-            " NameKey=\"" + Escape(NameKey) + "\"" +
-            " DescriptionKey=\"" + Escape(DescriptionKey) + "\"" +
-            " Icon=\"" + Escape(Icon) + "\"" +
-            " Price=\"" + Int(Price) + "\"" +
-            " StackLimit=\"" + Int(StackLimit) + "\"" +
-            " Category=\"" + Escape(Category) + "\"" +
-            " BehaviorType=\"" + Escape(BehaviorType) + "\" />\r\n";
+        public string ToXml() => SingleElementDocument(RootElementName, new[]
+        {
+            Attr("Version", Int(Version)),
+            Attr("Id", Id),
+            Attr("NameKey", NameKey),
+            Attr("DescriptionKey", DescriptionKey),
+            Attr("Icon", Icon),
+            Attr("Price", Int(Price)),
+            Attr("StackLimit", Int(StackLimit)),
+            Attr("Category", Category),
+            Attr("BehaviorType", BehaviorType),
+        });
     }
 
     public sealed class PluginDefinitionDocument : AddonDefinitionDocument
@@ -233,16 +260,17 @@ namespace Polaris.Addons.Authoring
             };
         }
 
-        public string ToXml() =>
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n" +
-            "<PPlugin Version=\"" + Int(Version) + "\"" +
-            " Id=\"" + Escape(Id) + "\"" +
-            " ItemId=\"" + Escape(ItemId) + "\"" +
-            " TitleKey=\"" + Escape(TitleKey) + "\"" +
-            " DescriptionKey=\"" + Escape(DescriptionKey) + "\"" +
-            " Icon=\"" + Escape(Icon) + "\"" +
-            " Cost=\"" + Int(Cost) + "\"" +
-            " BehaviorType=\"" + Escape(BehaviorType) + "\" />\r\n";
+        public string ToXml() => SingleElementDocument(RootElementName, new[]
+        {
+            Attr("Version", Int(Version)),
+            Attr("Id", Id),
+            Attr("ItemId", ItemId),
+            Attr("TitleKey", TitleKey),
+            Attr("DescriptionKey", DescriptionKey),
+            Attr("Icon", Icon),
+            Attr("Cost", Int(Cost)),
+            Attr("BehaviorType", BehaviorType),
+        });
     }
 
     public sealed class SkillDefinitionDocument : AddonDefinitionDocument
@@ -294,18 +322,19 @@ namespace Polaris.Addons.Authoring
             };
         }
 
-        public string ToXml() =>
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n" +
-            "<PSkill Version=\"" + Int(Version) + "\"" +
-            " Id=\"" + Escape(Id) + "\"" +
-            " ItemId=\"" + Escape(ItemId) + "\"" +
-            " TitleKey=\"" + Escape(TitleKey) + "\"" +
-            " DescriptionKey=\"" + Escape(DescriptionKey) + "\"" +
-            " Icon=\"" + Escape(Icon) + "\"" +
-            " Mode=\"" + Mode + "\"" +
-            " Unlock=\"" + Unlock + "\"" +
-            " CooldownSeconds=\"" + Number(CooldownSeconds) + "\"" +
-            " ConcurrencyGroup=\"" + Escape(ConcurrencyGroup) + "\"" +
-            " BehaviorType=\"" + Escape(BehaviorType) + "\" />\r\n";
+        public string ToXml() => SingleElementDocument(RootElementName, new[]
+        {
+            Attr("Version", Int(Version)),
+            Attr("Id", Id),
+            Attr("ItemId", ItemId),
+            Attr("TitleKey", TitleKey),
+            Attr("DescriptionKey", DescriptionKey),
+            Attr("Icon", Icon),
+            Attr("Mode", Mode.ToString()),
+            Attr("Unlock", Unlock.ToString()),
+            Attr("CooldownSeconds", Number(CooldownSeconds)),
+            Attr("ConcurrencyGroup", ConcurrencyGroup),
+            Attr("BehaviorType", BehaviorType),
+        });
     }
 }

@@ -1,7 +1,7 @@
-using Polaris.Addons.Catalog;
-using Polaris.Addons.Runtime;
 using System.Threading;
 using System.Threading.Tasks;
+using Polaris.Addons.Catalog;
+using Polaris.Addons.Runtime;
 
 namespace Polaris.Addons
 {

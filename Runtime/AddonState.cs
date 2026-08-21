@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Polaris.Addons.Authoring;
 using Polaris.Save;
 
 namespace Polaris.Addons.Runtime
@@ -74,10 +75,21 @@ namespace Polaris.Addons.Runtime
 
         public byte[] MigratePayload(string ownerId, int targetSchemaVersion, Func<int, byte[], byte[]> migrate)
         {
-            if (migrate == null) throw new ArgumentNullException(nameof(migrate));
-            if (targetSchemaVersion < 1) throw new ArgumentOutOfRangeException(nameof(targetSchemaVersion));
+            if (migrate == null)
+            {
+                throw new ArgumentNullException(nameof(migrate));
+            }
+
+            if (targetSchemaVersion < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(targetSchemaVersion));
+            }
+
             byte[] original = ReadPayload(ownerId, out int storedVersion);
-            if (storedVersion >= targetSchemaVersion) return original;
+            if (storedVersion >= targetSchemaVersion)
+            {
+                return original;
+            }
 
             // 只有迁移完整成功后才提交；异常时原 payload 与版本保持不变，可只读恢复。
             byte[] migrated = migrate(storedVersion, original == null ? null : (byte[])original.Clone());
@@ -90,7 +102,7 @@ namespace Polaris.Addons.Runtime
 
         private static void ValidateOwner(string ownerId)
         {
-            if (!Authoring.AddonIdentifier.IsValidId(ownerId))
+            if (!AddonIdentifier.IsValidId(ownerId))
             {
                 throw new ArgumentException("Invalid Addons owner id '" + ownerId + "'.", nameof(ownerId));
             }

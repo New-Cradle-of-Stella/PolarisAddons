@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using HarmonyLib;
 using nel;
 using Polaris.Addons.Catalog;
 using Polaris.Addons.Definitions;
@@ -14,8 +13,8 @@ namespace Polaris.Addons.Adapters
     internal sealed class AliceItemCatalogAdapter : IDisposable
     {
         private readonly AddonCatalog catalog;
-        private ItemExecutionPipeline pipeline;
         private readonly object gate = new object();
+        private ItemExecutionPipeline pipeline;
         private IReadOnlyDictionary<string, string> customIdsByKey = EmptyMap();
         private IReadOnlyDictionary<string, string> itemIdsByKey = EmptyMap();
         private bool disposed;
@@ -32,69 +31,28 @@ namespace Polaris.Addons.Adapters
                 return false;
             }
 
-            var expectedCustomIds = catalog.Items.ToDictionary(
-                registration => AdapterKey.For("item", registration.Item.Id),
-                registration => registration.Item.Id,
+            // 自定义物品占用的 key 不参与原版镜像，否则同一个物品会既是扩展内容又是原版内容。
+            var customKeys = new HashSet<string>(
+                catalog.Items.Select(x => AdapterKey.For("item", x.Item.Id)),
                 StringComparer.Ordinal);
 
-            var projected = new List<NativeItemDescriptor>();
-            var projectedIdsByKey = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (KeyValuePair<string, NelItem> entry in NelItem.getWholeDictionary().ToArray())
-            {
-                if (entry.Value == null || expectedCustomIds.ContainsKey(entry.Key))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    string id = NativeItemId.FromKey(entry.Key);
-                    projected.Add(ToDescriptor(id, entry.Key, entry.Value));
-                    projectedIdsByKey.Add(entry.Key, id);
-                }
-                catch (Exception ex)
-                {
-                    Report(ex, "projecting native item " + entry.Key);
-                }
-            }
-
-            var installedCustomIds = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (ItemRegistration registration in catalog.Items.OrderBy(x => x.Item.Id, StringComparer.Ordinal))
-            {
-                try
-                {
-                    string key = AdapterKey.For("item", registration.Item.Id);
-                    NelItem native = NelItem.GetById(key, true);
-                    if (native == null)
-                    {
-                        native = CreateNativeItem(key, registration.Item);
-                    }
-                    else if (native.id != ushort.MaxValue)
-                    {
-                        throw new InvalidOperationException(
-                            "Generated key '" + key + "' is already owned by native item id " + native.id + ".");
-                    }
-
-                    ConfigureNativeItem(native, registration.Item);
-                    installedCustomIds.Add(key, registration.Item.Id);
-                }
-                catch (Exception ex)
-                {
-                    Report(ex, "installing Addons item " + registration.Item.Id);
-                }
-            }
+            List<NativeItemDescriptor> projected = ProjectNativeItems(customKeys);
+            Dictionary<string, string> installedCustomIds = InstallCustomItems();
 
             catalog.ReplaceNativeItems(projected);
             pipeline ??= new ItemExecutionPipeline(catalog);
+
+            // 原版 key → Addons id 的整表：先是镜像出来的原版物品，再覆盖上安装成功的自定义物品。
+            var idsByKey = projected.ToDictionary(x => x.NativeKey, x => x.Id, StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> custom in installedCustomIds)
             {
-                projectedIdsByKey[custom.Key] = custom.Value;
+                idsByKey[custom.Key] = custom.Value;
             }
 
             lock (gate)
             {
-                customIdsByKey = new Dictionary<string, string>(installedCustomIds, StringComparer.Ordinal);
-                itemIdsByKey = new Dictionary<string, string>(projectedIdsByKey, StringComparer.Ordinal);
+                customIdsByKey = installedCustomIds;
+                itemIdsByKey = idsByKey;
             }
 
             return true;
@@ -149,6 +107,62 @@ namespace Polaris.Addons.Adapters
             }
         }
 
+        /// <summary>把游戏目录里的原版物品抓成只读快照；单个物品投影失败不影响其余物品。</summary>
+        private List<NativeItemDescriptor> ProjectNativeItems(HashSet<string> customKeys)
+        {
+            var projected = new List<NativeItemDescriptor>();
+            foreach (KeyValuePair<string, NelItem> entry in NelItem.getWholeDictionary().ToArray())
+            {
+                if (entry.Value == null || customKeys.Contains(entry.Key))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    projected.Add(ToDescriptor(NativeItemId.FromKey(entry.Key), entry.Key, entry.Value));
+                }
+                catch (Exception ex)
+                {
+                    AddonDiagnostics.Report(ex, "projecting native item " + entry.Key);
+                }
+            }
+
+            return projected;
+        }
+
+        /// <summary>把扩展物品投影成原版 NelItem；返回安装成功的 原版 key → Addons id。</summary>
+        private Dictionary<string, string> InstallCustomItems()
+        {
+            var installed = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (ItemRegistration registration in catalog.Items.OrderBy(x => x.Item.Id, StringComparer.Ordinal))
+            {
+                try
+                {
+                    string key = AdapterKey.For("item", registration.Item.Id);
+                    NelItem native = NelItem.GetById(key, true);
+                    if (native == null)
+                    {
+                        native = CreateNativeItem(key, registration.Item);
+                    }
+                    else if (native.id != ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException(
+                            "Generated key '" + key + "' is already owned by native item id " + native.id + ".");
+                    }
+
+                    ConfigureNativeItem(native, registration.Item);
+                    installed.Add(key, registration.Item.Id);
+                }
+                catch (Exception ex)
+                {
+                    AddonDiagnostics.Report(ex, "installing Addons item " + registration.Item.Id);
+                }
+            }
+
+            return installed;
+        }
+
         private bool TryGetCustomId(string key, out string id)
         {
             id = null;
@@ -198,29 +212,20 @@ namespace Polaris.Addons.Adapters
 
         private static NativeItemDescriptor ToDescriptor(string id, string key, NelItem item)
         {
-            string name = key;
-            try
-            {
-                name = item.getLocalizedName(0) ?? key;
-            }
-            catch
-            {
-                // 文案系统尚未就绪时仍保留稳定 key，下一次目录重装会刷新快照。
-            }
+            // 文案系统尚未就绪时保留稳定 key，下一次目录重装会刷新快照。
+            string name = AdapterSafe.Read(() => item.getLocalizedName(0) ?? key, key);
 
-            string description = string.Empty;
-            try
-            {
-                using (STB builder = TX.PopBld())
+            // 部分原版描述要求场景或存档已就绪；镜像仍可保留其余元数据。
+            string description = AdapterSafe.Read(
+                () =>
                 {
-                    item.getDescLocalized(builder, null, 0);
-                    description = builder.ToString();
-                }
-            }
-            catch
-            {
-                // 部分原版描述要求场景或存档已就绪；镜像仍可保留其余元数据。
-            }
+                    using (STB builder = TX.PopBld())
+                    {
+                        item.getDescLocalized(builder, null, 0);
+                        return builder.ToString();
+                    }
+                },
+                string.Empty);
 
             return new NativeItemDescriptor(
                 id,
@@ -235,68 +240,5 @@ namespace Polaris.Addons.Adapters
 
         private static IReadOnlyDictionary<string, string> EmptyMap() =>
             new Dictionary<string, string>(StringComparer.Ordinal);
-
-        private static void Report(Exception exception, string operation)
-        {
-            try
-            {
-                PolarisAPI.Errors.Report(exception, operation, typeof(AliceItemCatalogAdapter).Assembly);
-            }
-            catch
-            {
-                // 目录安装是逐项隔离的；诊断不可用也不能中断其余物品。
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(NelItem), nameof(NelItem.readItemScript))]
-    internal static class Patch_NelItem_ReadItemScript_Addons
-    {
-        [HarmonyPostfix]
-        private static void Postfix() => AddonRuntime.TryInstallGameAdapter();
-    }
-
-    [HarmonyPatch(typeof(NelItem), nameof(NelItem.Use))]
-    internal static class Patch_NelItem_Use_Addons
-    {
-        [HarmonyPrefix]
-        private static bool Prefix(
-            NelItem __instance,
-            int grade,
-            ref int __result,
-            out NativeItemUseInvocation __state)
-        {
-            __state = null;
-            if (__instance == null)
-            {
-                return true;
-            }
-
-            if (AddonRuntime.TryExecuteCustomItem(__instance.key, grade, out int customResult))
-            {
-                __result = customResult;
-                return false;
-            }
-
-            __state = AddonRuntime.BeginNativeItemUse(__instance.key, grade);
-            return true;
-        }
-
-        [HarmonyPostfix]
-        private static void Postfix(int __result, NativeItemUseInvocation __state) =>
-            AddonRuntime.CompleteNativeItemUse(__state, __result);
-    }
-
-    [HarmonyPatch(typeof(NelItem), "get_useable")]
-    internal static class Patch_NelItem_Useable_Addons
-    {
-        [HarmonyPostfix]
-        private static void Postfix(NelItem __instance, ref bool __result)
-        {
-            if (!__result && __instance != null && AddonRuntime.IsCustomNativeItem(__instance.key))
-            {
-                __result = true;
-            }
-        }
     }
 }

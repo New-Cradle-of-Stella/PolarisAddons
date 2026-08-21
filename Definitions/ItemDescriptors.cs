@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using Polaris.Addons.Authoring;
 
 namespace Polaris.Addons.Definitions
@@ -112,7 +113,8 @@ namespace Polaris.Addons.Definitions
             string normalizedKey = Normalize(nativeKey, out bool keyChanged);
             if (namespaceChanged || keyChanged)
             {
-                normalizedKey += "_" + StableHash(nativeKey);
+                // 规范化是有损的，附加散列保证不同的原版 key 不会塌缩成同一个 id。
+                normalizedKey += "_" + StableHash.Of(nativeKey);
             }
 
             return "native." + normalizedNamespace + "/item/" + normalizedKey;
@@ -120,7 +122,7 @@ namespace Polaris.Addons.Definitions
 
         private static string Normalize(string value, out bool changed)
         {
-            var result = new System.Text.StringBuilder(value.Length);
+            var result = new StringBuilder(value.Length);
             changed = false;
             foreach (char source in value)
             {
@@ -147,21 +149,6 @@ namespace Polaris.Addons.Definitions
 
             string normalized = result.ToString().Trim('_');
             return string.IsNullOrEmpty(normalized) ? "unknown" : normalized;
-        }
-
-        private static string StableHash(string value)
-        {
-            unchecked
-            {
-                uint hash = 2166136261;
-                foreach (byte valueByte in System.Text.Encoding.UTF8.GetBytes(value))
-                {
-                    hash ^= valueByte;
-                    hash *= 16777619;
-                }
-
-                return hash.ToString("x8");
-            }
         }
     }
 }
